@@ -1,0 +1,55 @@
+#include "structures.fxh"
+#include "lighting.fxh"
+
+Texture2D    g_Texture;
+SamplerState g_Texture_sampler;
+
+// Declarar el buffer de constantes globales
+cbuffer PSConstants
+{
+    GlobalConstants g_Constants;
+}
+
+// Buffer para las constantes de iluminación
+cbuffer PSLightAttribs
+{
+    LightAttribs g_LightAttribs;
+}
+
+struct PSOutput
+{
+    float4 Color : SV_TARGET;
+};
+
+void TerrainPS(in TerrainDSOut PSIn,
+               out PSOutput    PSOut)
+{
+    // Obtener el color base de la textura
+    float4 BaseColor = g_Texture.Sample(g_Texture_sampler, PSIn.uv);
+    
+    // Calcular la normal del terreno
+    float3 ddx = ddx(PSIn.Pos.xyz);
+    float3 ddy = ddy(PSIn.Pos.xyz);
+    float3 Normal = normalize(cross(ddx, ddy));
+    
+    // Calcular la iluminación
+    float3 LitColor = CalculateLighting(Normal, BaseColor.rgb, g_LightAttribs);
+    
+    // Añadir efecto de neblina basado en el nivel de erosión y la altura
+    // Utilizar HeightScale del buffer de constantes globales
+    float heightFog = max(0.0, 1.0 - (PSIn.WorldPos.y / (g_Constants.HeightScale * 0.5))); 
+    float fogFactor = heightFog * g_Constants.ErosionLevel * 0.5; // Intensidad de la neblina
+    
+    // Color de la neblina - azulado para simular niebla de erosión fluvial
+    float3 fogColor = float3(0.7, 0.8, 1.0) * g_LightAttribs.AmbientColor.xyz; // Nota el .xyz aquí
+    
+    // Mezclar color del terreno con la neblina
+    float3 FinalColor = lerp(LitColor, fogColor, fogFactor);
+    
+#if CONVERT_PS_OUTPUT_TO_GAMMA
+    // Use fast approximation for gamma correction.
+    FinalColor = pow(FinalColor, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
+#endif
+    
+    PSOut.Color = float4(FinalColor, BaseColor.a);
+}
